@@ -38,30 +38,12 @@ addons:
             - texinfo
             - lcov
             - clang-format-6.0
+            - flex
+            - bison
 jobs:
     include:
-        - stage: test
-          env:
-            - CMAKE_BUILD_TYPE=Debug
-            - CODE_COVERAGE=ON
-          #after_success:
-            ## run tests
-            #- cd test
-            #- ./testeth
-            #- cd ..
-
-            ## Create lcov report
-            #- lcov --capture --directory . --output-file coverage.info
-            #- lcov --remove coverage.info '/usr/*' --output-file coverage.info # filter system-files
-            #- lcov --remove coverage.info 'SkaleDeps/*' --output-file coverage.info # filter dependency files
-            #- lcov --remove coverage.info '.hunter/*' --output-file coverage.info # filter dependency files
-            #- lcov --list coverage.info # debug info
-
-            ## Uploading report to CodeCov
-            #- bash <(curl -s https://codecov.io/bash) -f coverage.info -t $CODECOV_TOKEN || echo "Codecov did not collect coverage reports"
-
         - stage: deploy
-          if: branch IN (master, release-candidate)
+          if: branch IN (master, release-candidate, develop)
           env:
             - CMAKE_BUILD_TYPE=Debug
             - CODE_COVERAGE=OFF
@@ -69,7 +51,9 @@ jobs:
           after_success:
             - cp skaled/skaled ../scripts/skale_build/executable/
             - export VERSION=$(cat ../VERSION)
-            - export VERSION=$( (test $TRAVIS_BRANCH = "master" && echo $VERSION) || ../scripts/calculate_rc_version.sh $VERSION)
+            - export VERSION=$( (test $TRAVIS_BRANCH = "master" && echo $VERSION) ||
+                                (test $TRAVIS_BRANCH = "release-candidate" && ../scripts/calculate_rc_version.sh $VERSION) ||
+                                ../scripts/calculate_develop_version.sh $VERSION)
             - echo "Version $VERSION"
             - cd ../scripts/skale_build
             - ./build_image.sh $VERSION
@@ -81,8 +65,11 @@ jobs:
               git config --local user.name "skale-jenkins" &&
               git config --local user.email "$GITHUB_EMAIL" &&
               export TRAVIS_TAG=v$VERSION &&
-              git tag "$TRAVIS_TAG"
+              git tag "$TRAVIS_TAG" &&
+              git push https://$GITHUB_OAUTH_TOKEN@github.com/$TRAVIS_REPO_SLUG.git $TRAVIS_TAG
               ) || true
+            - echo $TRAVIS_TAG
+            - echo $VERSION
           deploy:
             - provider: releases
               api_key: "$GITHUB_OAUTH_TOKEN"
@@ -108,11 +95,18 @@ jobs:
                 branch:
                     - master
                     - release-candidate
+                    - develop
+#            - provider: script
+#              script: bash ../scripts/push_tag.sh v$VERSION
+#              on:
+#                repo: DimaStebaev/skaled
+#                branch:
+#                    - develop
 cache:
     ccache: true
     directories:
         - ~/.ethash
-        - ~/.local        
+        - ~/.local
         - ~/.hunter
         # Cache whole deps dir hoping you will not need to download and
         # build external dependencies next build.
